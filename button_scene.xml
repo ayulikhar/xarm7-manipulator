@@ -1,0 +1,51 @@
+<mujoco model="xarm7 button press scene">
+  <include file="xarm7.xml"/>
+
+  <statistic center="0.3 0 0.4" extent=".65"/>
+
+  <visual>
+    <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0"/>
+    <rgba haze="0.15 0.25 0.35 1"/>
+    <global azimuth="150" elevation="-20"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3"
+      markrgb="0.8 0.8 0.8" width="300" height="300"/>
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
+    <geom name="floor" size="0 0 0.05" type="plane" material="groundplane"/>
+
+    <!-- Small table placed in front of the arm to hold the panel -->
+    <body name="table" pos="0.55 0 0">
+      <geom name="table_top" type="box" size="0.15 0.15 0.01" pos="0 0 0.29" rgba="0.45 0.3 0.2 1" contype="1" conaffinity="1"/>
+      <geom name="table_leg_fl" type="cylinder" size="0.015 0.14" pos="0.13 0.13 0.14" rgba="0.35 0.22 0.15 1" contype="1" conaffinity="1"/>
+      <geom name="table_leg_fr" type="cylinder" size="0.015 0.14" pos="0.13 -0.13 0.14" rgba="0.35 0.22 0.15 1" contype="1" conaffinity="1"/>
+      <geom name="table_leg_bl" type="cylinder" size="0.015 0.14" pos="-0.13 0.13 0.14" rgba="0.35 0.22 0.15 1" contype="1" conaffinity="1"/>
+      <geom name="table_leg_br" type="cylinder" size="0.015 0.14" pos="-0.13 -0.13 0.14" rgba="0.35 0.22 0.15 1" contype="1" conaffinity="1"/>
+    </body>
+
+    <!-- Small mounting panel with one large button and an indicator lamp beside it -->
+    <body name="panel" pos="0.55 0 0.315" quat="0.7071068 0 0.7071068 0">
+      <geom name="panel_geom" type="box" size="0.015 0.09 0.13" rgba="0.25 0.25 0.28 1" contype="1" conaffinity="1"/>
+
+      <body name="button_body" pos="-0.027 0 0.03">
+        <joint name="button_joint" type="slide" axis="1 0 0" range="0 0.012" damping="300" stiffness="200" springref="0"/>
+        <geom name="button_geom" type="cylinder" size="0.045 0.012" quat="0.7071068 0 0.7071068 0" rgba="0.8 0.1 0.1 1" contype="1" conaffinity="1" mass="0.05"/>
+        <site name="button_site" pos="0 0 0" size="0.045" rgba="1 0 0 0"/>
+      </body>
+
+      <body name="lamp_body" pos="0 0.09 0.05">
+        <geom name="lamp_geom" type="sphere" size="0.03" rgba="0.3 0.3 0.3 1" contype="0" conaffinity="0"/>
+      </body>
+    </body>
+  </worldbody>
+
+  <sensor>
+    <touch name="button_touch" site="button_site" cutoff="10"/>
+  </sensor>
+</mujoco>

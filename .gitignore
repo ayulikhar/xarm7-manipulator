@@ -1,0 +1,22 @@
+cat > .gitignore <<'EOF'
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# MuJoCo
+MUJOCO_LOG.TXT
+
+# Local tooling
+.drift/
+
+# IDE / editor
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+EOF
