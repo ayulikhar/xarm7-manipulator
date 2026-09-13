@@ -1,10 +1,3 @@
-"""
-MuJoCo insertion demo: xArm7 with a peg rigidly attached to its end effector
-aligns with and inserts the peg into a matching hole in a target block.
-
-Run directly:
-    python3 insertion_demo.py
-"""
 import argparse
 import numpy as np
 import mujoco
@@ -25,8 +18,7 @@ POS_TOL = 1e-4
 
 
 def solve_ik(model, data, site_name, target_pos, target_quat, q_init, joint_ids, dof_ids):
-    """Damped least-squares IK for a site's position+orientation using only the arm joints."""
-    data.qpos[dof_ids] = q_init
+    data.qpos[dof_ids] = q_init #Damped least-squares IK for a site's position+orientation using only the arm joints.
     mujoco.mj_forward(model, data)
     site_id = model.site(site_name).id
 
