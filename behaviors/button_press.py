@@ -1,9 +1,3 @@
-"""Simple, reliable xarm7 button-press demo.
-
-Motion sequence: home -> approach -> press button -> hold (lamp lights) -> retract -> home.
-Uses a lightweight Jacobian IK (position-only) computed on a scratch MjData copy so the
-live simulation is never perturbed by direct qpos writes.
-"""
 import time
 import numpy as np
 import os
@@ -39,16 +33,15 @@ LAMP_ON = np.array([1.0, 1.0, 0.2, 1.0])
 home_qpos_arm = data.qpos[arm_qpos_idx].copy()
 home_ctrl = data.ctrl.copy()
 
-# Scratch data used ONLY for IK solves so we never disturb the live sim state.
+# scratch data used ONLY for IK solves so we never disturb the live sim state.
 ik_data = mujoco.MjData(model)
 
-# Tracking flags for final summary (headless run).
+# tracking flags for final summary (headless run).
 button_pressed_ever = False
 lamp_on_during_hold = False
 
 
 def solve_ik(target_pos, seed_qpos, iters=150, tol=1e-3, step=0.5):
-    """Damped least-squares IK for the 7 arm joints, holding TCP orientation fixed."""
     ik_data.qpos[:] = data.qpos
     ik_data.qpos[arm_qpos_idx] = seed_qpos
     mujoco.mj_forward(model, ik_data)
@@ -79,8 +72,8 @@ def solve_ik(target_pos, seed_qpos, iters=150, tol=1e-3, step=0.5):
 
 
 def move_to(target_qpos_arm, duration_s, phase="", hold_gripper=0.0, track_lamp=False, viewer=None):
-    """Smoothly ramp ctrl from current arm ctrl to target joint angles."""
-    global lamp_on_during_hold
+    
+    global lamp_on_during_hold #Smoothly ramp ctrl from current arm ctrl to target joint angles."
     start_ctrl = data.ctrl[arm_act_idx].copy()
     steps = max(1, int(duration_s / model.opt.timestep))
     print_interval = max(1, steps // 5)
@@ -101,10 +94,7 @@ def move_to(target_qpos_arm, duration_s, phase="", hold_gripper=0.0, track_lamp=
 
 
 def move_cartesian(start_pos, end_pos, seed_qpos, duration_s, phase="", hold_gripper=0.0, viewer=None):
-    """Interpolate the TCP target in Cartesian space, solving IK fresh each step
-    (warm-started from the previous solution) so the joint-space path never
-    swings the TCP off the straight line between start_pos and end_pos."""
-    global lamp_on_during_hold
+    global lamp_on_during_hold #Interpolate the TCP target in Cartesian space, solving IK fresh each step (warm-started from the previous solution) so the joint-space path never swings the TCP off the straight line between start_pos and end_pos."
     steps = max(1, int(duration_s / model.opt.timestep))
     print_interval = max(1, steps // 5)
     q_cur = seed_qpos.copy()
@@ -137,7 +127,7 @@ def update_lamp():
 
 
 def run(viewer=None):
-    button_pos = data.site_xpos[button_site].copy()  # initial (unpressed) button center
+    button_pos = data.site_xpos[button_site].copy()  # initial unpressed button center
     lifted_from_home = home_tcp_pos + np.array([0.0, 0.0, 0.15])
     approach_above = button_pos + np.array([0.0, 0.0, 0.15])
     top_of_button = button_pos + np.array([0.0, 0.0, 0.02])
