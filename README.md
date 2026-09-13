@@ -12,6 +12,8 @@ The current implementation includes two manipulation behaviors:
 The robot model is represented in MJCF and runs in MuJoCo 2.3.3 or later.
 
 ---
+## Demo:
+https://github.com/user-attachments/assets/7f09f27b-d7d4-428d-9e43-e328a5390789
 
 ## Manipulation Behaviors
 
