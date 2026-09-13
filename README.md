@@ -1,14 +1,27 @@
 # xArm7 Manipulator
 
-MuJoCo-based simulation and control experiments for the **UFACTORY xArm7 7-DOF robotic manipulator**.
+MuJoCo-based manipulation experiments with the **UFACTORY xArm7 7-DOF robotic arm**.
 
-The repository currently focuses on manipulation tasks in simulation, including a button-pressing task with Cartesian motion, Jacobian-based inverse kinematics, contact sensing, and task-state verification.
+This project explores how task-level manipulation behaviors can be translated into robot motion using **inverse kinematics, Cartesian planning, joint-space control, trajectory generation, contact sensing, and task-specific verification**.
 
-## Overview
+The current implementation includes two manipulation behaviors:
 
-This project provides a lightweight MuJoCo environment for experimenting with xArm7 manipulation and control.
+* **Button Pressing**: approach, align, press a physical button, detect contact, and verify the action through an indicator.
+* **Peg Insertion**: align a peg with a matching hole, maintain the required orientation, and insert the peg to a defined depth.
 
-The current button-press demo executes the following sequence:
+The robot model is represented in MJCF and runs in MuJoCo 2.3.3 or later.
+
+---
+
+## Manipulation Behaviors
+
+### 1. Button Pressing
+
+The button-press task models a simple contact-rich manipulation problem.
+
+The xArm7 must move from its home configuration toward a button mounted on a panel, align the end effector with the button, press it far enough to actuate the button mechanism, hold the press, and then retract.
+
+The behavior follows:
 
 ```text
 Home
@@ -17,7 +30,7 @@ Lift
   ↓
 Move above button
   ↓
-Approach
+Descend
   ↓
 Press
   ↓
@@ -25,51 +38,269 @@ Hold
   ↓
 Retract
   ↓
-Return home
+Return Home
 ```
 
-The simulation uses a contact sensor to detect the button press. When the button is successfully pressed, the simulated indicator lamp changes state, providing a visual confirmation of task completion.
+#### Task setup
 
-## Features
+The MuJoCo scene contains:
 
-* xArm7 MJCF model for MuJoCo
-* 7-DOF arm control
-* Position and orientation-aware Jacobian IK
-* Cartesian end-effector interpolation
-* Smooth joint-space control
-* Simulated button with physical travel
-* Contact-based button detection
-* Visual lamp feedback
-* Automatic return-to-home verification
-* Additional manipulation experiments
+* xArm7 with its end-effector/gripper
+* A table and mounting panel
+* A button with a **prismatic joint**
+* A simulated indicator lamp
+* A MuJoCo touch sensor attached to the button
 
-## Button Press Demo
+The button has a limited linear travel of 12 mm, allowing the simulation to represent the physical displacement produced by a press.
 
-`button_press_demo.py` controls the xArm7 in `button_scene.xml`.
+#### Motion generation
 
-The controller uses a damped least-squares style Jacobian IK solver to generate joint targets while preserving the end-effector orientation. Cartesian interpolation keeps the end-effector trajectory close to the intended straight-line path during approach and retraction.
+The controller does not directly teleport the arm between joint configurations.
 
-The task controller also monitors a MuJoCo touch sensor attached to the button. A successful press activates the simulated lamp.
+Instead, it generates intermediate Cartesian targets for the TCP and solves inverse kinematics at each step.
 
-At the end of each cycle, the controller reports:
+For a Cartesian segment:
 
 ```text
-Button pressed: True
-Lamp turned on during press/hold: True
-Returned to home: True
+p(t) = p_start + α(t)(p_goal - p_start)
 ```
+
+the controller computes a corresponding joint configuration using the robot Jacobian.
+
+The IK solver uses the relationship:
+
+```text
+Δx = J(q) Δq
+```
+
+and computes joint updates using the Jacobian pseudoinverse.
+
+The implementation uses a separate MuJoCo data structure for IK calculations. This allows the controller to solve candidate configurations without directly disturbing the live simulation state.
+
+The controller also constrains the resulting joint configurations to the robot's joint limits.
+
+#### Why Cartesian interpolation?
+
+For a button press, the direction of approach matters.
+
+The end effector should travel toward the button along a controlled Cartesian path rather than taking an arbitrary joint-space route. The controller therefore interpolates the TCP position between waypoints and repeatedly solves IK from the previous solution.
+
+This produces a sequence of motion phases:
+
+```text
+Home → Lift → Approach → Descend → Press
+```
+
+followed by:
+
+```text
+Press → Retract → Return Home
+```
+
+The implementation keeps the gripper state throughout the approach and releases it during the final return-to-home phase.
+
+#### Contact and task verification
+
+The button is not considered pressed simply because the robot reached a target pose.
+
+A MuJoCo touch sensor measures interaction with the button. When the sensor exceeds the configured threshold, the controller marks the button as pressed and changes the simulated lamp state.
+
+The demo therefore verifies three task-level conditions:
+
+```text
+Button pressed
+Lamp activated during press/hold
+Robot returned to home
+```
+
+This separates **motion completion** from **task completion**.
 
 ### Run
 
-Install MuJoCo and Python dependencies, then run:
-
 ```bash
-python button_press_demo.py
+python3 button_press_demo.py
 ```
 
-The simulation opens in the MuJoCo viewer and continuously executes the button-press cycle.
+---
 
-## Repository Structure
+## 2. Peg Insertion
+
+The peg-insertion task introduces a more constrained manipulation problem.
+
+Here, a peg is rigidly attached to the xArm7 end effector and must be aligned with a matching hole in a target block before being inserted.
+
+The task is:
+
+```text
+Initial Pose
+     ↓
+Approach Hole
+     ↓
+Align Peg
+     ↓
+Enter Hole
+     ↓
+Insert to Bottom
+```
+
+Unlike the button task, successful insertion depends strongly on both **position and orientation**.
+
+### Geometric targets
+
+The scene defines three important task locations:
+
+```text
+peg_tip
+hole_entry
+hole_bottom
+```
+
+The controller first positions the peg above the hole, aligns it with the required orientation, moves to the hole entrance, and finally solves for a configuration where the peg reaches the bottom of the hole.
+
+The desired peg orientation points the peg axis downward into the hole.
+
+### Position + orientation IK
+
+The insertion controller solves a 6-DOF end-effector IK problem:
+
+```text
+             ┌─ Position error
+Task error = │
+             └─ Orientation error
+```
+
+The Jacobian combines translational and rotational components:
+
+```text
+J = [ J_position ]
+    [ J_rotation ]
+```
+
+and the controller computes joint updates using a **damped least-squares formulation**:
+
+```text
+Δq = Jᵀ (J Jᵀ + λI)⁻¹ e
+```
+
+This provides a more stable solution near configurations where the Jacobian becomes poorly conditioned.
+
+The controller also limits the magnitude of each joint update and respects the xArm7 joint limits.
+
+### Waypoint-based motion
+
+Once the IK solver determines valid joint configurations for the important task poses, the robot executes them as a sequence of waypoints:
+
+```text
+q_start
+   ↓
+q_approach
+   ↓
+q_entry
+   ↓
+q_bottom
+```
+
+The motion between waypoints uses a **minimum-jerk trajectory profile**:
+
+```text
+s(t) = 10t³ - 15t⁴ + 6t⁵
+```
+
+This provides a smooth scalar interpolation between consecutive joint configurations rather than an abrupt transition.
+
+### Insertion verification
+
+The controller evaluates the final distance between the peg tip and the bottom of the hole.
+
+The task reports:
+
+```text
+INSERTION SUCCESS
+```
+
+when the final distance falls below the configured tolerance.
+
+The script also supports a headless mode for automated task verification:
+
+```bash
+python3 insertion_demo.py --headless
+```
+
+This makes the behavior useful not only as a visual simulation but also as a repeatable manipulation test.
+
+---
+
+## What I Learned Through These Behaviors
+
+These experiments helped connect the mathematical and implementation sides of robotic manipulation.
+
+### Forward and inverse kinematics
+
+The robot model provides the relationship between joint configurations and end-effector pose.
+
+The behaviors then solve the inverse problem:
+
+```text
+Desired TCP pose
+      ↓
+Inverse Kinematics
+      ↓
+Joint configuration
+      ↓
+Robot motion
+```
+
+### Jacobians
+
+The Jacobian provides the local relationship between joint velocities/configuration changes and end-effector motion.
+
+The project uses this relationship for both:
+
+* position-oriented button pressing
+* position + orientation constrained peg insertion
+
+### Cartesian vs. joint-space planning
+
+The two behaviors highlight why the choice of representation matters.
+
+For the button task, Cartesian interpolation provides controlled motion toward the contact surface.
+
+For insertion, task-space targets are converted into joint-space waypoints and then executed using smooth trajectories.
+
+### Trajectory generation
+
+The project uses interpolation rather than instantaneous changes in joint commands.
+
+The insertion task uses a minimum-jerk profile to produce smoother transitions between manipulation waypoints.
+
+### Contact and task sensing
+
+The button task introduces sensing into the control loop.
+
+The robot does not simply assume that reaching the desired position means the task succeeded. The controller uses the simulated touch sensor to determine whether the button actually received contact.
+
+### Task-level verification
+
+Both behaviors include explicit success criteria.
+
+For example:
+
+```text
+Button:
+    contact detected
+    + lamp activated
+    + robot returned home
+
+Peg insertion:
+    peg tip reaches insertion depth
+    + final distance within tolerance
+```
+
+This moves the project from simple robot animation toward **behavior-level manipulation**.
+
+---
+
+## Project Structure
 
 ```text
 xarm7-manipulator/
@@ -78,91 +309,99 @@ xarm7-manipulator/
 │   └── Robot meshes and visual assets
 │
 ├── button_press_demo.py
-│   └── Button-press task controller
+│   └── Button pressing behavior
 │
 ├── button_scene.xml
-│   └── MuJoCo scene containing the xArm7 and button
-│
-├── debug_retract_diag.py
-│   └── Diagnostics for motion and retraction behavior
+│   └── Button manipulation environment
 │
 ├── insertion_demo.py
-│   └── Manipulation/insertion experiment
+│   └── Peg insertion behavior
 │
-├── hand.xml
-│   └── xArm7 hand/gripper model
+├── debug_retract_diag.py
+│   └── Motion/retraction diagnostics
 │
 ├── scene.xml
-│   └── Base MuJoCo scene
+│   └── Base MuJoCo environment
 │
 ├── xarm7.xml
 │   └── xArm7 MJCF model
 │
-└── xarm7_nohand.xml
-    └── xArm7 model without the hand
+├── xarm7_nohand.xml
+│   └── xArm7 model without hand
+│
+└── hand.xml
+    └── Hand/gripper model
 ```
 
-## Technical Approach
+The repository also contains the original xArm7 MJCF description and the supporting model assets. The model derives from the publicly available xArm7 URDF and adds MuJoCo-specific actuators and scene configuration.
 
-### Inverse Kinematics
+---
 
-The button-press controller computes the desired end-effector position and solves for the corresponding arm joint configuration using the MuJoCo site Jacobian.
+## Getting Started
 
-The solver uses the current joint configuration as a warm start and constrains the solution within the robot's joint limits.
-
-### Cartesian Motion
-
-Rather than directly interpolating between arbitrary joint configurations, the controller interpolates the desired TCP position and solves IK along the Cartesian trajectory.
-
-This produces controlled motion for:
-
-* lifting from the home pose
-* approaching the button
-* descending onto the button
-* pressing
-* retracting
-* returning to the home position
-
-### Contact Detection
-
-A MuJoCo touch sensor detects interaction between the end effector and the button.
-
-The sensor state drives the simulated indicator lamp, making it possible to verify that the robot physically reaches the button rather than simply reaching a predefined joint configuration.
-
-## Model
-
-The xArm7 model is represented in **MJCF** and includes the arm, actuators, and hand/gripper components.
-
-The model is derived from the publicly available xArm7 URDF description and adapted for MuJoCo simulation.
-
-## Requirements
+### Requirements
 
 * Python 3
-* MuJoCo
+* MuJoCo 2.3.3+
 * NumPy
 * MuJoCo Python bindings
 
-The model currently targets **MuJoCo 2.3.3 or later**.
+Install the Python MuJoCo package:
 
-## Future Work
+```bash
+pip install mujoco numpy
+```
 
-Planned experiments include:
+### Button press
 
-* Motion planning with A*
-* Collision-aware manipulation
-* Improved end-effector control
-* Object interaction and insertion tasks
-* Grasping and pick-and-place
-* Vision-guided manipulation
+```bash
+python3 button_press_demo.py
+```
+
+### Peg insertion
+
+```bash
+python3 insertion_demo.py
+```
+
+For headless insertion verification:
+
+```bash
+python3 insertion_demo.py --headless
+```
+
+---
+
+## Current Scope
+
+The current implementation focuses on **model-based manipulation in simulation**.
+
+The behaviors are deliberately task-specific. The next step is to move from predefined task waypoints toward more general manipulation and planning methods.
+
+Potential directions include:
+
+* Collision-aware motion planning
+* A* and sampling-based planners
+* Visual servoing
+* Object pose estimation
+* Force/contact-aware insertion
 * ROS 2 integration
-* Reinforcement learning for manipulation
+* Grasping and pick-and-place
+* Learning-based manipulation
+* Reinforcement learning
 
-## Motivation
+---
 
-This project serves as a sandbox for studying robotic manipulation, motion planning, and control through progressively more complex simulation tasks.
+## Model
 
-The long-term goal is to move from scripted manipulation toward planners and learning-based controllers that can generalize across different tasks and environments.
+The xArm7 model is represented using MuJoCo's MJCF format.
+
+The original model conversion involved preserving visual geometry, loading the URDF into MuJoCo, restructuring common properties through `<default>` elements, adding actuators, and creating a simulation scene around the robot.
+
+The repository requires **MuJoCo 2.3.3 or later**.
+
+---
 
 ## License
 
-See [`LICENSE`](LICENSE) for licensing information.
+See [`LICENSE`](LICENSE) for the applicable license information.
